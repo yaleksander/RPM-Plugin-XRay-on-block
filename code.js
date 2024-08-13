@@ -5,11 +5,14 @@ const pluginName = "Hide object on block view";
 
 var eraseRadius = RPM.Manager.Plugins.getParameter(pluginName, "Erase radius variable ID");
 var eraseFloor = RPM.Manager.Plugins.getParameter(pluginName, "Filter tileset variable ID");
+var eraseMount = RPM.Manager.Plugins.getParameter(pluginName, "Filter mountains variable ID");
 var eraseWalls = RPM.Manager.Plugins.getParameter(pluginName, "Filter walls variable ID");
 var eraseObj3D = RPM.Manager.Plugins.getParameter(pluginName, "Filter 3D objects variable ID");
 var wallsList = [];
+var mountList = [];
 var obj3dList = [];
 var lastMap = null;
+var target = false;
 
 const extraVert = "\
 varying vec3 viewBlockPlugin_vPos;\n\
@@ -56,18 +59,30 @@ setInterval(function ()
 		if (RPM.Scene.Map.current !== lastMap)
 		{
 			wallsList = [];
+			mountList = [];
 			obj3dList = [];
 			const walls = RPM.Scene.Map.current.texturesWalls;
+			const mount = RPM.Scene.Map.current.texturesMountains;
 			const obj3d = RPM.Scene.Map.current.texturesObjects3D;
 			for (var i = 0; i < walls.length; i++)
 				if (!!walls[i])
 					wallsList.push(walls[i]);
+			for (var i = 0; i < mount.length; i++)
+			{
+				if (!!mount[i])
+				{
+					mount[i].material.side = THREE.DoubleSide;
+					mountList.push(mount[i].material);
+				}
+			}
 			for (var i = 0; i < obj3d.length; i++)
 				if (!!obj3d[i])
 					obj3dList.push(obj3d[i]);
 			const v = RPM.Core.Game.current.variables;
 			if (v[eraseFloor] !== false && v[eraseFloor] !== true)
 				v[eraseFloor] = false;
+			if (v[eraseMount] !== false && v[eraseMount] !== true)
+				v[eraseMount] = true;
 			if (v[eraseWalls] !== false && v[eraseWalls] !== true)
 				v[eraseWalls] = true;
 			if (v[eraseObj3D] !== false && v[eraseObj3D] !== true)
@@ -100,7 +115,8 @@ RPM.Scene.Map.prototype.updateCameraHiding = function (pointer)
 			continue;
 		c[i].material.userData.uniforms.viewBlockPlugin_radius = {value: 0};
 	}
-	RPM.Manager.GL.raycaster.setFromCamera(pointer, this.camera.getThreeCamera());
+	const dir = (target ? this.camera.target.position : RPM.Core.Game.current.hero.position).clone().sub(this.camera.getThreeCamera().position);
+	RPM.Manager.GL.raycaster.set(this.camera.getThreeCamera().position, dir.normalize());
 	const intersects = RPM.Manager.GL.raycaster.intersectObjects(c);
 	for (var i = 0; i < intersects.length; i++)
 	{
@@ -111,14 +127,15 @@ RPM.Scene.Map.prototype.updateCameraHiding = function (pointer)
 		if (Math.ceil(intersects[i].distance) + 5 < this.camera.distance)
 		{
 			const w = wallsList.includes(intersects[i].object.material);
+			const m = mountList.includes(intersects[i].object.material);
 			const o = obj3dList.includes(intersects[i].object.material);
-			const m = intersects[i].object.viewBlockPlugin_isMapObj;
-			if ((v[eraseWalls] && w) || (v[eraseObj3D] && o) || (m && intersects[i].object.viewBlockPlugin_erase) || (v[eraseFloor] && !w && !m && !o))
+			const e = intersects[i].object.viewBlockPlugin_isMapObj;
+			if ((v[eraseMount] && m) || (v[eraseWalls] && w) || (v[eraseObj3D] && o) || (e && intersects[i].object.viewBlockPlugin_erase) || (v[eraseFloor] && !w && !m && !e && !o))
 			{
-				intersects[i].object.material.userData.uniforms.viewBlockPlugin_isFloor = {value: (w || m || o) ? 0 : 1};
+				intersects[i].object.material.userData.uniforms.viewBlockPlugin_isFloor = {value: (w || m || e || o) ? 0 : 1};
 				intersects[i].object.material.userData.uniforms.viewBlockPlugin_radius = {value: v[eraseRadius]};
 				intersects[i].object.material.userData.uniforms.viewBlockPlugin_squareSize = {value: RPM.Datas.Systems.SQUARE_SIZE};
-				intersects[i].object.material.userData.uniforms.viewBlockPlugin_tgtPos = {value: this.camera.target.position};
+				intersects[i].object.material.userData.uniforms.viewBlockPlugin_tgtPos = {value: target ? this.camera.target.position : RPM.Core.Game.current.hero.position};
 			}
 		}
 	}
@@ -162,4 +179,9 @@ RPM.Manager.Plugins.registerCommand(pluginName, "Filter map object", (id, erase)
 		if (!!result && !!result.object.mesh)
 			result.object.mesh.viewBlockPlugin_erase = erase;
 	}, RPM.Core.ReactionInterpreter.currentObject);
+});
+
+RPM.Manager.Plugins.registerCommand(pluginName, "Follow camera", (enable) =>
+{
+	target = enable;
 });
