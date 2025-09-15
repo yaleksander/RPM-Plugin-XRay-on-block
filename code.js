@@ -1,7 +1,7 @@
 import { RPM } from "../path.js"
 import { THREE } from "../../System/Globals.js";
 
-const pluginName = "Hide object on block view";
+const pluginName = "XRay on block";
 
 const customOffset = new THREE.Vector3(0, 0, 0);
 
